@@ -35,23 +35,37 @@ namespace backend.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
-            var allUsers = await _userRepo.GetAllAsync();
-            var allUsersDto = allUsers.Select(u => u.ToUserDto());
-            return Ok(allUsersDto);
+            try
+            {
+                var allUsers = await _userRepo.GetAllAsync();
+                var allUsersDto = allUsers.Select(u => u.ToUserDto());
+                return Ok(allUsersDto);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An error occurred while creating the user. \n", error = ex.Message });
+            }
         }
 
         // Get selected user
         [HttpGet("{id:int}")]
         public async Task<IActionResult> GetUserById([FromRoute] int id)
         {
-            var user = await _userRepo.GetByIdAsync(id);
-            if (user == null)
+            try
             {
-                return NotFound();
+                var user = await _userRepo.GetByIdAsync(id);
+                if (user == null)
+                {
+                    return NotFound();
+                }
+                else
+                {
+                    return Ok(user.ToUserDto());
+                }
             }
-            else
+            catch (Exception ex)
             {
-                return Ok(user.ToUserDto());
+                return StatusCode(500, new { message = "An error occurred while creating the user. \n", error = ex.Message });
             }
         }
 
@@ -59,16 +73,23 @@ namespace backend.Controllers
         [HttpGet("payment/{id:int}")]
         public async Task<IActionResult> GetUserByIdWithPaymentMethods([FromRoute] int id)
         {
-            var user = await _userRepo.GetByIdAsync(id);
-            var paymentMethods = await _paymentMethodRepo.GetAllByIdAsync(id);
-            if (user == null)
+            try
             {
-                return NotFound();
+                var user = await _userRepo.GetByIdAsync(id);
+                var paymentMethods = await _paymentMethodRepo.GetAllByIdAsync(id);
+                if (user == null)
+                {
+                    return NotFound();
+                }
+                else
+                {
+                    var userPaymentMethods = paymentMethods.Select(pm => pm.ToPaymentMethodDto()).ToList();
+                    return Ok(user.ToUserWithPaymentDto(userPaymentMethods));
+                }
             }
-            else
+            catch (Exception ex)
             {
-                var userPaymentMethods = paymentMethods.Select(pm => pm.ToPaymentMethodDto()).ToList();
-                return Ok(user.ToUserWithPaymentDto(userPaymentMethods));
+                return StatusCode(500, new { message = "An error occurred while creating the user. \n", error = ex.Message });
             }
         }
 
@@ -76,13 +97,20 @@ namespace backend.Controllers
         [HttpPost]
         public async Task<IActionResult> CreateUser([FromBody] CreateUserDto userDto)
         {
-            if (!ModelState.IsValid)
+            try
             {
-                return BadRequest(ModelState);
+                if (!ModelState.IsValid)
+                {
+                    return BadRequest(ModelState);
+                }
+                var userModel = userDto.ToUserFromUserCreateDto();
+                await _userRepo.CreateAsync(userModel);
+                return CreatedAtAction(nameof(GetUserById), new { id = userModel.UserId }, userModel.ToUserDto());
             }
-            var userModel = userDto.ToUserFromUserCreateDto();
-            await _userRepo.CreateAsync(userModel);
-            return CreatedAtAction(nameof(GetUserById), new { id = userModel.UserId }, userModel.ToUserDto());
+            catch (Exception ex)
+            {
+                return StatusCode(500, new { message = "An error occurred while creating the user. \n", error = ex.Message });
+            }
         }
 
         // Update user - the user is allowed to update his own account only.
@@ -90,25 +118,32 @@ namespace backend.Controllers
         // [Route("{id:int}")]
         public async Task<IActionResult> UpdateUser([FromBody] UpdateUserDto userDto)
         {
-            if (!ModelState.IsValid)
+            try
             {
-                return BadRequest(ModelState);
+                if (!ModelState.IsValid)
+                {
+                    return BadRequest(ModelState);
+                }
+                var currUserId = await _userHelper.GetCurrentUserIdAsync(HttpContext);
+                if (currUserId == null)
+                {
+                    return Unauthorized("User not found.");
+                }
+                if (currUserId.Value != userDto.UserId)
+                {
+                    return Unauthorized($"User does not match");
+                }
+                var userModel = await _userRepo.UpdateAsync(currUserId.Value, userDto);
+                if (userModel == null)
+                {
+                    return NotFound();
+                }
+                return Ok(userModel.ToUserDto());
             }
-            var currUserId = await _userHelper.GetCurrentUserIdAsync(HttpContext);
-            if (currUserId == null)
+            catch (Exception ex)
             {
-                return Unauthorized("User not found.");
+                return StatusCode(500, new { message = "An error occurred while creating the user. \n", error = ex.Message });
             }
-            if (currUserId.Value != userDto.UserId)
-            {
-                return Unauthorized($"User does not match");
-            }
-            var userModel = await _userRepo.UpdateAsync(currUserId.Value, userDto);
-            if (userModel == null)
-            {
-                return NotFound();
-            }
-            return Ok(userModel.ToUserDto());
         }
 
         // Delete account - state will be changes. record will be not deleted permenently.
@@ -116,21 +151,28 @@ namespace backend.Controllers
         // [Route("{id:int}")]
         public async Task<IActionResult> DeleteUser()
         {
-            if (!ModelState.IsValid)
+            try
             {
-                return BadRequest(ModelState);
+                if (!ModelState.IsValid)
+                {
+                    return BadRequest(ModelState);
+                }
+                var currUserId = await _userHelper.GetCurrentUserIdAsync(HttpContext);
+                if (currUserId == null)
+                {
+                    return Unauthorized("User not found.");
+                }
+                var userModel = await _userRepo.DeleteAsync(currUserId.Value);
+                if (userModel == null)
+                {
+                    return NotFound();
+                }
+                return NoContent();
             }
-            var currUserId = await _userHelper.GetCurrentUserIdAsync(HttpContext);
-            if (currUserId == null)
+            catch (Exception ex)
             {
-                return Unauthorized("User not found.");
+                return StatusCode(500, new { message = "An error occurred while creating the user. \n", error = ex.Message });
             }
-            var userModel = await _userRepo.DeleteAsync(currUserId.Value);
-            if (userModel == null)
-            {
-                return NotFound();
-            }
-            return NoContent();
         }
     }
 }
